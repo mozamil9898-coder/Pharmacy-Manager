@@ -24,7 +24,13 @@ footer{position:fixed;bottom:0;left:0;right:0;text-align:center;background:#ffff
 @media print{header,main>.status,.tabs,footer,.no-print{display:none!important}body{background:white}.hidden{display:none!important}#printArea{display:block!important}.receipt{border:0}}
 </style></head>
 <body>
-<header><h1>Pharmacy Manager</h1><p>Offline medicine inventory & sales • Stored on this device</p></header>
+<section id="loginScreen" style="max-width:430px;margin:9vh auto;padding:18px">
+ <div class="panel"><h2 id="loginTitle">Admin setup</h2><p class="note" id="loginHint">Create the main administrator account. Keep this password safe.</p>
+ <form id="loginForm"><label>Username</label><input id="loginUser" required autocomplete="username" value="admin"><label>Password</label><input id="loginPass" type="password" required minlength="6" autocomplete="current-password" placeholder="At least 6 characters"><div id="confirmWrap"><label>Confirm password</label><input id="loginConfirm" type="password" minlength="6" autocomplete="new-password"></div><button class="primary" id="loginSubmit">Create Admin Account</button></form>
+ <p class="note" id="loginError" style="color:#b42318"></p></div>
+</section>
+<div id="appShell" class="hidden">
+<header><div class="row"><div><h1>Pharmacy Manager</h1><p>Offline medicine inventory & sales • Stored on this device</p></div><button class="secondary" id="logoutBtn">Logout</button></div></header>
 <main>
 <div class="status" id="storageStatus">Opening local database…</div>
 <nav class="tabs">
@@ -38,7 +44,9 @@ footer{position:fixed;bottom:0;left:0;right:0;text-align:center;background:#ffff
 <div class="card"><small>Today's Sales (AFN)</small><div class="num" id="todaySales">0</div></div>
 </div>
 <div class="panel"><h2>Attention Required</h2><div id="alerts" class="empty">No alerts yet.</div></div>
-<div class="panel"><h2>Database & Backup</h2><p class="note">Medicine records and sales are stored locally in this phone. Keep regular backups. Do not clear Chrome site data or use Incognito mode.</p><button class="secondary" id="exportBtn" style="width:100%">Download Full Backup</button><label>Restore backup file</label><input type="file" id="importFile" accept=".json,application/json"><button class="secondary" id="importBtn" style="width:100%;margin-top:9px">Restore Backup</button></div>
+<div class="panel admin-only"><h2>Database & Backup</h2><p class="note">Medicine records and sales are stored locally in this phone. Keep regular backups. Do not clear Chrome site data or use Incognito mode.</p><button class="secondary" id="exportBtn" style="width:100%">Download Full Backup</button><label>Restore backup file</label><input type="file" id="importFile" accept=".json,application/json"><button class="secondary" id="importBtn" style="width:100%;margin-top:9px">Restore Backup</button></div>
+<div class="panel admin-only"><h2>User Management</h2><p class="note">Create or update the seller account. The seller can make sales but cannot edit medicines, restore backups, or manage users.</p><form id="sellerForm"><label>Seller username</label><input id="sellerUser" required placeholder="e.g. seller"><label>Seller password</label><input id="sellerPass" type="password" minlength="6" placeholder="At least 6 characters"><button class="secondary" style="width:100%;margin-top:10px">Save Seller Account</button></form><div class="meta" id="sellerStatus"></div></div>
+<div class="panel"><h2>Change My Password</h2><form id="changePassForm"><label>Current password</label><input id="oldPass" type="password" required><label>New password</label><input id="newPass" type="password" minlength="6" required><label>Confirm new password</label><input id="newPass2" type="password" minlength="6" required><button class="secondary" style="width:100%;margin-top:10px">Update My Password</button></form></div>
 </section>
 
 <section id="medicines" class="hidden">
@@ -71,6 +79,7 @@ footer{position:fixed;bottom:0;left:0;right:0;text-align:center;background:#ffff
 </section>
 <section id="printArea" class="hidden"><div id="receipt" class="receipt"></div><button class="secondary no-print" onclick="window.print()" style="width:100%">Print receipt</button><button class="secondary no-print" id="backFromReceipt" style="width:100%;margin-top:8px">Back to sales</button></section>
 </main><footer>Pharmacy Manager • Local database • Currency: AFN</footer>
+</div>
 
 <script>
 const DB='PharmacyManagerDB', MED='medicines', SALES='sales';
@@ -79,10 +88,22 @@ const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().slice(0,10);
 const money=n=>Number(n||0).toLocaleString('en-US',{maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function openDB(){return new Promise((ok,no)=>{let r=indexedDB.open(DB,2);r.onupgradeneeded=()=>{let d=r.result;if(!d.objectStoreNames.contains(MED))d.createObjectStore(MED,{keyPath:'id'});if(!d.objectStoreNames.contains(SALES))d.createObjectStore(SALES,{keyPath:'id'})};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
+function openDB(){return new Promise((ok,no)=>{let r=indexedDB.open(DB,3);r.onupgradeneeded=()=>{let d=r.result;if(!d.objectStoreNames.contains(MED))d.createObjectStore(MED,{keyPath:'id'});if(!d.objectStoreNames.contains(SALES))d.createObjectStore(SALES,{keyPath:'id'});if(!d.objectStoreNames.contains('users'))d.createObjectStore('users',{keyPath:'username'})};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
 function all(store){return new Promise((ok,no)=>{let r=db.transaction(store).objectStore(store).getAll();r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error)})}
 function put(store,obj){return new Promise((ok,no)=>{let t=db.transaction(store,'readwrite');t.objectStore(store).put(obj);t.oncomplete=ok;t.onerror=()=>no(t.error)})}
 function del(store,id){return new Promise((ok,no)=>{let t=db.transaction(store,'readwrite');t.objectStore(store).delete(id);t.oncomplete=ok;t.onerror=()=>no(t.error)})}
+function getUser(username){return new Promise((ok,no)=>{let r=db.transaction('users').objectStore('users').get(username.toLowerCase());r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
+function usersAll(){return all('users')}
+async function passwordHash(password,salt){let enc=new TextEncoder(),key=await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveBits']);let bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:120000,hash:'SHA-256'},key,256);return Array.from(new Uint8Array(bits)).map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function saveUser(username,password,role){username=username.trim().toLowerCase();if(!/^[a-z0-9._-]{3,24}$/.test(username))throw Error('Username must be 3–24 characters (English letters, numbers, dot, dash or underscore).');if(password.length<6)throw Error('Password must be at least 6 characters.');let salt=crypto.getRandomValues(new Uint8Array(16));let hash=await passwordHash(password,salt);await put('users',{username,role,salt:Array.from(salt),hash,updatedAt:new Date().toISOString()})}
+let currentUser=null,firstSetup=false;
+function showLogin(setup){firstSetup=setup;$('loginScreen').classList.remove('hidden');$('appShell').classList.add('hidden');$('loginTitle').textContent=setup?'Create Admin Account':'Pharmacy Manager Login';$('loginHint').textContent=setup?'First, create your private administrator account.':'Enter your username and password to continue.';$('loginSubmit').textContent=setup?'Create Admin Account':'Login';$('confirmWrap').classList.toggle('hidden',!setup);$('loginError').textContent='';$('loginPass').value='';$('loginConfirm').value='';$('loginUser').value=setup?'admin':''}
+async function enterApp(user){currentUser=user;$('loginScreen').classList.add('hidden');$('appShell').classList.remove('hidden');document.querySelectorAll('.admin-only').forEach(x=>x.classList.toggle('hidden',user.role!=='admin'));document.querySelector('[data-tab="medicines"]').classList.toggle('hidden',user.role!=='admin');$('sellerStatus').textContent='Signed in as '+user.username+' ('+user.role+').';let allUsers=await usersAll();let seller=allUsers.find(x=>x.role==='seller');$('sellerUser').value=seller?seller.username:'';$('sellerPass').value='';await refresh();let granted=navigator.storage?.persist?await navigator.storage.persist():false;$('storageStatus').textContent=granted?'Local database ready • Persistent storage granted':'Local database ready • Keep regular backups';}
+$('loginForm').onsubmit=async e=>{e.preventDefault();try{let username=$('loginUser').value.trim().toLowerCase(),password=$('loginPass').value;if(firstSetup){if(password!==$('loginConfirm').value)throw Error('Passwords do not match.');await saveUser(username,password,'admin');await enterApp(await getUser(username));}else{let u=await getUser(username);if(!u)throw Error('Incorrect username or password.');let h=await passwordHash(password,new Uint8Array(u.salt));if(h!==u.hash)throw Error('Incorrect username or password.');await enterApp(u)}}catch(err){$('loginError').textContent=err.message||'Login failed.'}};
+$('logoutBtn').onclick=()=>{currentUser=null;cart=[];showLogin(false)};
+$('sellerForm').onsubmit=async e=>{e.preventDefault();if(currentUser?.role!=='admin')return;try{let name=$('sellerUser').value.trim().toLowerCase(),pass=$('sellerPass').value;if(!pass){let old=await getUser(name);if(old&&old.role==='seller')throw Error('Enter a new password to update this account.');throw Error('Enter a password for the seller account.')}let oldUsers=await usersAll();for(let u of oldUsers)if(u.role==='seller'&&u.username!==name)await del('users',u.username);await saveUser(name,pass,'seller');$('sellerPass').value='';$('sellerStatus').textContent='Seller account saved successfully.';alert('Seller account saved.')}catch(err){alert(err.message)}};
+
+$('changePassForm').onsubmit=async e=>{e.preventDefault();try{let old=$('oldPass').value,np=$('newPass').value;if(np!==$('newPass2').value)throw Error('New passwords do not match.');let u=await getUser(currentUser.username);if(await passwordHash(old,new Uint8Array(u.salt))!==u.hash)throw Error('Current password is incorrect.');await saveUser(u.username,np,u.role);$('changePassForm').reset();alert('Your password has been updated.')}catch(err){alert(err.message)}};
 async function refresh(){[medicines,sales]=await Promise.all([all(MED),all(SALES)]);sales.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));renderAll()}
 const status=m=>m.expiry&&m.expiry<today()?'Expired':Number(m.quantity)<=Number(m.reorder)?'Low stock':'OK';
 function renderAll(){renderDashboard();renderMedicineList();renderSalesLists();renderRecent()}
@@ -115,9 +136,9 @@ function showReceipt(s){$('receipt').innerHTML=receiptHTML(s);['dashboard','medi
 window.viewSale=id=>{let s=sales.find(x=>x.id===id);if(s)showReceipt(s)};
 $('backFromReceipt').onclick=()=>{ $('printArea').classList.add('hidden');$('history').classList.remove('hidden');setTab('history')};
 function setTab(id){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));['dashboard','medicines','sales','history'].forEach(x=>$(x).classList.toggle('hidden',x!==id));if(id==='history')renderSalesLists()}
-document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(b.dataset.tab==='medicines'&&currentUser?.role!=='admin')return;setTab(b.dataset.tab)});
 
 $('exportBtn').onclick=()=>{let blob=new Blob([JSON.stringify({app:'Pharmacy Manager',version:3,exportedAt:new Date().toISOString(),medicines,sales},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pharmacy-full-backup-'+today()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
 $('importBtn').onclick=()=>{let f=$('importFile').files[0];if(!f)return alert('Choose a backup file first.');let r=new FileReader();r.onload=async()=>{try{let d=JSON.parse(r.result);if(!Array.isArray(d.medicines)||!d.medicines.every(x=>x.id&&x.trade))throw 0;let ss=Array.isArray(d.sales)?d.sales:[];if(confirm('Replace current medicine and sales records with this backup?')){let tx=db.transaction([MED,SALES],'readwrite'),m=tx.objectStore(MED),s=tx.objectStore(SALES);m.clear();s.clear();d.medicines.forEach(x=>m.put(x));ss.forEach(x=>s.put(x));tx.oncomplete=async()=>{await refresh();alert('Backup restored.')};tx.onerror=()=>alert('Restore failed.')}}catch(e){alert('Invalid backup file.')}};r.readAsText(f)};
-(async()=>{try{db=await openDB();await refresh();let granted=navigator.storage?.persist?await navigator.storage.persist():false;$('storageStatus').textContent=granted?'Local database ready • Persistent storage granted':'Local database ready • Keep regular backups';if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{})}catch(e){$('storageStatus').textContent='Database error: '+e.message;alert('Open this app from its HTTPS website.')}})();
+(async()=>{try{db=await openDB();let us=await usersAll();showLogin(us.length===0);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{})}catch(e){$('loginError').textContent='Database error: '+e.message+' — open this app from its HTTPS website.'}})();
 </script></body></html>
